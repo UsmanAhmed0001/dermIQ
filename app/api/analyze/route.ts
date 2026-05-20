@@ -160,6 +160,5 @@ export async function POST(req: NextRequest) {
 }
 
 // Allow up to 10MB request body (for high-res images)
-export const config = {
-  api: { bodyParser: { sizeLimit: '10mb' } },
-}
+export const maxDuration = 30
+

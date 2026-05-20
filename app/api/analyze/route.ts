@@ -27,16 +27,16 @@ export async function POST(req: NextRequest) {
     const base64Data = image.replace(/^data:image\/\w+;base64,/, '')
     const buffer = Buffer.from(base64Data, 'base64')
 
-    const hfUrl = `https://api-inference.huggingface.co/models/${modelId}`
+    const hfUrl = `https://router.huggingface.co/hf-inference/models/${modelId}`
 
     const hfResponse = await fetch(hfUrl, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/octet-stream',
+        'Content-Type': 'application/json',
         'x-wait-for-model': 'true',
       },
-      body: buffer,
+      body: JSON.stringify({ inputs: base64Data }),
     })
 
     if (!hfResponse.ok) {

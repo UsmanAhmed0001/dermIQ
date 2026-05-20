@@ -19,13 +19,12 @@ export async function POST(req: NextRequest) {
     const { image } = await req.json()
     if (!image) return NextResponse.json({ error: 'No image provided' }, { status: 400 })
 
-    // Call your HuggingFace Space Gradio API
-    const spaceUrl = 'https://uzzyy-dermiq-api.hf.space/gradio_api/run/predict'
+    const spaceUrl = 'https://uzzyy-dermiq-api.hf.space/classify'
 
     const hfResponse = await fetch(spaceUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: [image], fn_index: 0 }),
+      body: JSON.stringify({ image }),
     })
 
     if (!hfResponse.ok) {
@@ -35,14 +34,10 @@ export async function POST(req: NextRequest) {
     }
 
     const spaceResult = await hfResponse.json()
-    // Gradio returns: { data: [{ label: score, ... }] }
-    const labelScores: Record<string, number> = spaceResult.data[0]
+    const rawPredictions: Array<{ label: string; score: number }> = spaceResult.predictions
+    const sorted = [...rawPredictions].sort((a, b) => b.score - a.score)
 
-    const rawPredictions = Object.entries(labelScores)
-      .map(([label, score]) => ({ label, score }))
-      .sort((a, b) => b.score - a.score)
-
-    const enriched = rawPredictions.map((pred) => {
+    const enriched = sorted.map((pred) => {
       const lesionData = getLesionByLabel(pred.label)
       if (lesionData) {
         return {

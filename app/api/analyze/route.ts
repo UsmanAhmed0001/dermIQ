@@ -19,12 +19,12 @@ export async function POST(req: NextRequest) {
     const { image } = await req.json()
     if (!image) return NextResponse.json({ error: 'No image provided' }, { status: 400 })
 
-    const spaceUrl = 'https://uzzyy-dermiq-api.hf.space/classify'
+    const spaceUrl = 'https://uzzyy-dermiq-api.hf.space/run/predict'
 
     const hfResponse = await fetch(spaceUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image }),
+      body: JSON.stringify({ data: [image] }),
     })
 
     if (!hfResponse.ok) {
@@ -34,7 +34,8 @@ export async function POST(req: NextRequest) {
     }
 
     const spaceResult = await hfResponse.json()
-    const rawPredictions: Array<{ label: string; score: number }> = spaceResult.predictions
+    const jsonString = spaceResult.data[0]
+    const rawPredictions: Array<{ label: string; score: number }> = JSON.parse(jsonString)
     const sorted = [...rawPredictions].sort((a, b) => b.score - a.score)
 
     const enriched = sorted.map((pred) => {

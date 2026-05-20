@@ -31,12 +31,12 @@ export async function POST(req: NextRequest) {
 
     const hfResponse = await fetch(hfUrl, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'x-wait-for-model': 'true',
-      },
-      body: JSON.stringify({ inputs: base64Data }),
+     headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/octet-stream',
+      'x-wait-for-model': 'true',
+    },
+    body: buffer,
     })
 
     if (!hfResponse.ok) {

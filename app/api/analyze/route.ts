@@ -20,12 +20,12 @@ export async function POST(req: NextRequest) {
     if (!image) return NextResponse.json({ error: 'No image provided' }, { status: 400 })
 
     // Call your HuggingFace Space Gradio API
-    const spaceUrl = 'https://uzzyy-dermiq-api.hf.space/run/predict'
+    const spaceUrl = 'https://uzzyy-dermiq-api.hf.space/gradio_api/run/predict'
 
     const hfResponse = await fetch(spaceUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ data: [image] }),
+      body: JSON.stringify({ data: [image], fn_index: 0 }),
     })
 
     if (!hfResponse.ok) {

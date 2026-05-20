@@ -19,39 +19,30 @@ export async function POST(req: NextRequest) {
     const { image } = await req.json()
     if (!image) return NextResponse.json({ error: 'No image provided' }, { status: 400 })
 
-    const token = process.env.HUGGINGFACE_API_TOKEN
-    if (!token) return NextResponse.json({ error: 'Missing API token' }, { status: 500 })
+    // Call your HuggingFace Space Gradio API
+    const spaceUrl = 'https://uzzyy-dermiq-api.hf.space/run/predict'
 
-    const modelId = process.env.HF_MODEL_ID || 'Anwarkh1/Skin_Lesion-Image_Classification'
-
-    const base64Data = image.replace(/^data:image\/\w+;base64,/, '')
-    const buffer = Buffer.from(base64Data, 'base64')
-
-    const hfUrl = `https://api-inference.huggingface.co/models/${modelId}`
-
-    const hfResponse = await fetch(hfUrl, {
+    const hfResponse = await fetch(spaceUrl, {
       method: 'POST',
-     headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/octet-stream',
-      'x-wait-for-model': 'true',
-    },
-    body: buffer,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: [image] }),
     })
 
     if (!hfResponse.ok) {
       const errorText = await hfResponse.text()
-      console.error('HuggingFace error:', hfResponse.status, errorText)
-      if (hfResponse.status === 503) {
-        return NextResponse.json({ error: 'Model warming up. Wait 20s and retry.', retryable: true }, { status: 503 })
-      }
-      return NextResponse.json({ error: `HF error: ${hfResponse.status}` }, { status: 500 })
+      console.error('Space error:', hfResponse.status, errorText)
+      return NextResponse.json({ error: `Space error: ${hfResponse.status}` }, { status: 500 })
     }
 
-    const rawPredictions: Array<{ label: string; score: number }> = await hfResponse.json()
-    const sorted = [...rawPredictions].sort((a, b) => b.score - a.score)
+    const spaceResult = await hfResponse.json()
+    // Gradio returns: { data: [{ label: score, ... }] }
+    const labelScores: Record<string, number> = spaceResult.data[0]
 
-    const enriched = sorted.map((pred) => {
+    const rawPredictions = Object.entries(labelScores)
+      .map(([label, score]) => ({ label, score }))
+      .sort((a, b) => b.score - a.score)
+
+    const enriched = rawPredictions.map((pred) => {
       const lesionData = getLesionByLabel(pred.label)
       if (lesionData) {
         return {

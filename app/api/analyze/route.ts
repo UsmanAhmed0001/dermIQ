@@ -10,6 +10,7 @@ export interface AnalysisResult {
     risk: string; action: string; urgency: string; confidence: number; emoji: string
   }
   allPredictions: Array<{ lesionId: string; name: string; confidence: number; risk: string; color: string }>
+  gradcam: string | null
   disclaimer: string
   analyzedAt: string
 }
@@ -48,27 +49,3 @@ export async function POST(req: NextRequest) {
       return {
         lesionId: pred.label, name: pred.label, layman: 'Unknown lesion type.',
         description: '', risk: 'moderate', action: 'Consult a dermatologist.',
-        urgency: 'Book an appointment.', confidence: Math.round(pred.score * 100),
-        emoji: '❓', color: 'text-gray-400',
-      }
-    })
-
-    const top = enriched[0]
-    return NextResponse.json({
-      topPrediction: {
-        lesionId: top.lesionId, name: top.name, layman: top.layman,
-        description: top.description, risk: top.risk, action: top.action,
-        urgency: top.urgency, confidence: top.confidence, emoji: top.emoji,
-      },
-      allPredictions: enriched.map((e) => ({
-        lesionId: e.lesionId, name: e.name, confidence: e.confidence, risk: e.risk, color: e.color,
-      })),
-      disclaimer: 'DermIQ is an AI-assisted screening tool and does NOT replace professional medical advice.',
-      analyzedAt: new Date().toISOString(),
-    } as AnalysisResult)
-
-  } catch (err) {
-    console.error('Analyze error:', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-  }
-}

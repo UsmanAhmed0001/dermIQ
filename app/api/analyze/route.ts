@@ -19,33 +19,20 @@ export async function POST(req: NextRequest) {
     const { image } = await req.json()
     if (!image) return NextResponse.json({ error: 'No image provided' }, { status: 400 })
 
-    const token = process.env.HUGGINGFACE_API_TOKEN
-    const modelId = 'Uzzyy/dermiq-skin-classifier'
-
-    const base64Data = image.replace(/^data:image\/\w+;base64,/, '')
-    const buffer = Buffer.from(base64Data, 'base64')
-
-    // Try inference API with your own model
-    const response = await fetch(
-      `https://api-inference.huggingface.co/models/${modelId}`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/octet-stream',
-          'x-wait-for-model': 'true',
-        },
-        body: buffer,
-      }
-    )
+    const response = await fetch('https://web-production-26f73.up.railway.app/classify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image }),
+    })
 
     if (!response.ok) {
       const err = await response.text()
-      console.error('HF error:', response.status, err)
-      return NextResponse.json({ error: `Model error: ${response.status}` }, { status: 500 })
+      console.error('Railway error:', response.status, err)
+      return NextResponse.json({ error: `API error: ${response.status}` }, { status: 500 })
     }
 
-    const rawPredictions: Array<{ label: string; score: number }> = await response.json()
+    const data = await response.json()
+    const rawPredictions: Array<{ label: string; score: number }> = data.predictions
     const sorted = [...rawPredictions].sort((a, b) => b.score - a.score)
 
     const enriched = sorted.map((pred) => {

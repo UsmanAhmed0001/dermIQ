@@ -35,14 +35,29 @@ export default function HomePage() {
     setIsMobile(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent))
   }, [])
 
-  // Convert file to base64 for API transmission
-  const fileToBase64 = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = reject
-      reader.readAsDataURL(file)
-    })
+const compressImage = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const img = document.createElement('img')
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      const MAX = 1024
+      let { width, height } = img
+      if (width > height) {
+        if (width > MAX) { height = (height * MAX) / width; width = MAX }
+      } else {
+        if (height > MAX) { width = (width * MAX) / height; height = MAX }
+      }
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, 0, 0, width, height)
+      URL.revokeObjectURL(url)
+      resolve(canvas.toDataURL('image/jpeg', 0.85))
+    }
+    img.onerror = reject
+    img.src = url
+  })
 
   const handleFile = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -54,7 +69,7 @@ export default function HomePage() {
       return
     }
     setError(null)
-    const b64 = await fileToBase64(file)
+    const b64 = await compressImage(file)
     setPreview(b64)
   }, [])
 

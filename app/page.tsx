@@ -10,10 +10,11 @@ const RAILWAY_URL = 'https://web-production-26f73.up.railway.app/classify'
 
 const ERROR_HINTS: Record<string, string> = {
   NO_SKIN:   'Hold the camera 5–10cm from your skin. Make sure skin fills most of the frame.',
+  NO_LESION: 'Make sure the lesion is centred and fills most of the frame.',
   NOT_READY: 'The model is loading. Please wait 20 seconds and try again.',
 }
 const ERROR_EMOJI: Record<string, string> = {
-  NO_SKIN: '🚫', NOT_READY: '⏳',
+  NO_SKIN: '🚫', NO_LESION: '🔍', NOT_READY: '⏳',
 }
 
 export default function HomePage() {
@@ -74,27 +75,21 @@ export default function HomePage() {
   const handleAnalyse = async () => {
     if (!preview) return
     setIsAnalyzing(true); setError(null)
-
     try {
       const res = await fetch(RAILWAY_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image: preview }),
       })
-
       const data = await res.json()
-
       if (!res.ok) {
         setError({ message: data.error || 'Analysis failed.', code: data.code })
         setIsAnalyzing(false); return
       }
-
-      // Enrich predictions with clinical data
       const sorted = [...data.predictions].sort(
-        (a: { label: string; score: number }, b: { label: string; score: number }) => b.score - a.score
+        (a: {label: string; score: number}, b: {label: string; score: number}) => b.score - a.score
       )
-
-      const enriched = sorted.map((pred: { label: string; score: number }) => {
+      const enriched = sorted.map((pred: {label: string; score: number}) => {
         const l = getLesionByLabel(pred.label)
         if (l) return {
           lesionId: l.id, name: l.name, layman: l.layman, description: l.description,
@@ -108,7 +103,6 @@ export default function HomePage() {
           emoji: '❓', color: 'text-gray-400',
         }
       })
-
       const top = enriched[0]
       const result: AnalysisResult = {
         topPrediction: {
@@ -116,18 +110,16 @@ export default function HomePage() {
           description: top.description, risk: top.risk, action: top.action,
           urgency: top.urgency, confidence: top.confidence, emoji: top.emoji,
         },
-        allPredictions: enriched.map((e: { lesionId: string; name: string; confidence: number; risk: string; color: string }) => ({
+        allPredictions: enriched.map((e: {lesionId: string; name: string; confidence: number; risk: string; color: string}) => ({
           lesionId: e.lesionId, name: e.name, confidence: e.confidence, risk: e.risk, color: e.color,
         })),
         gradcam: null,
         disclaimer: 'DermIQ is an AI-assisted screening tool and does NOT replace professional medical advice.',
         analyzedAt: new Date().toISOString(),
       }
-
       sessionStorage.setItem('dermiq_result', JSON.stringify(result))
       sessionStorage.setItem('dermiq_image', preview)
       router.push('/results')
-
     } catch {
       setError({ message: 'Network error. Please check your connection.' })
       setIsAnalyzing(false)
@@ -147,9 +139,7 @@ export default function HomePage() {
       </header>
 
       <section className="px-6 pt-12 pb-8 max-w-2xl mx-auto w-full text-center">
-        <p className="text-xs tracking-[0.25em] uppercase text-yellow-400/60 font-mono-custom mb-4">
-          AI-Powered Dermatology Screening
-        </p>
+        <p className="text-xs tracking-[0.25em] uppercase text-yellow-400/60 font-mono-custom mb-4">AI-Powered Dermatology Screening</p>
         <h1 className="font-display text-4xl sm:text-5xl leading-tight text-white/95 mb-5">
           Know your skin.<br /><span className="gold-text italic">Before it speaks.</span>
         </h1>
@@ -170,16 +160,12 @@ export default function HomePage() {
               <Upload className="w-7 h-7 text-yellow-400/70" />
             </div>
             <div>
-              <p className="text-white/70 text-sm font-medium mb-1">
-                {isDragging ? 'Drop to analyse' : 'Drop image here or click to browse'}
-              </p>
+              <p className="text-white/70 text-sm font-medium mb-1">{isDragging ? 'Drop to analyse' : 'Drop image here or click to browse'}</p>
               <p className="text-white/25 text-xs">Close-up of skin lesion · JPG, PNG, HEIC</p>
             </div>
             {isMobile && (
-              <button
-                onClick={(e) => { e.stopPropagation(); cameraInputRef.current?.click() }}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-full border border-yellow-400/30 text-yellow-400/80 text-sm hover:bg-yellow-400/8 transition-all"
-              >
+              <button onClick={(e) => { e.stopPropagation(); cameraInputRef.current?.click() }}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-full border border-yellow-400/30 text-yellow-400/80 text-sm hover:bg-yellow-400/8 transition-all">
                 <Camera className="w-4 h-4" />Take Photo
               </button>
             )}
@@ -219,10 +205,7 @@ export default function HomePage() {
               )}
               <button onClick={handleAnalyse} disabled={isAnalyzing}
                 className="w-full py-3.5 rounded-xl bg-gradient-to-r from-yellow-500 to-yellow-400 text-black font-medium text-sm tracking-wide hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                {isAnalyzing
-                  ? <>Analysing image...</>
-                  : <><Scan className="w-4 h-4" />Analyse Lesion<ChevronRight className="w-4 h-4" /></>
-                }
+                {isAnalyzing ? <>Analysing image...</> : <><Scan className="w-4 h-4" />Analyse Lesion<ChevronRight className="w-4 h-4" /></>}
               </button>
               <p className="text-center text-white/25 text-xs mt-3">Results in ~3 seconds · Not a medical diagnosis</p>
             </div>

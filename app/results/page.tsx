@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Camera, Upload, Scan, Shield, Zap, BookOpen, ChevronRight, X, AlertCircle } from 'lucide-react'
 import { getLesionByLabel } from '@/lib/lesionData'
+import { AnalysisResult } from '../api/analyze/route'
 
 const RAILWAY_URL = 'https://web-production-26f73.up.railway.app/classify'
 
@@ -118,6 +119,7 @@ export default function HomePage() {
       }
       sessionStorage.setItem('dermiq_result', JSON.stringify(result))
       sessionStorage.setItem('dermiq_image', preview)
+      console.log('Result being stored:', JSON.stringify(result).substring(0, 200))
       router.push('/results')
     } catch {
       setError({ message: 'Network error. Please check your connection.' })

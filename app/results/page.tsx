@@ -1,197 +1,242 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, AlertTriangle, CheckCircle, Clock, Info, Share2, RotateCcw, Eye } from 'lucide-react'
-import { AnalysisResult } from '../api/analyze/route'
-import { RISK_CONFIG, RiskLevel } from '@/lib/lesionData'
+import { Camera, Upload, Scan, Shield, Zap, BookOpen, ChevronRight, X, AlertCircle } from 'lucide-react'
 
-export default function ResultsPage() {
+const ERROR_HINTS: Record<string, string> = {
+  NO_SKIN:        'Tip: Hold the camera 5–10cm from your skin. Make sure the lesion fills most of the frame.',
+  QUALITY_FAIL:   'Tip: Use natural daylight and hold your hand steady for a sharp photo.',
+  LOW_CONFIDENCE: 'Tip: Get closer to the lesion and make sure it is in sharp focus.',
+}
+
+const ERROR_EMOJI: Record<string, string> = {
+  NO_SKIN:        '🚫',
+  QUALITY_FAIL:   '📷',
+  LOW_CONFIDENCE: '🔍',
+}
+
+export default function HomePage() {
   const router = useRouter()
-  const [result, setResult] = useState<AnalysisResult | null>(null)
-  const [image, setImage] = useState<string | null>(null)
-  const [mounted, setMounted] = useState(false)
-  const [showGradcam, setShowGradcam] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+
+  const [preview, setPreview] = useState<string | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [error, setError] = useState<{ message: string; code?: string } | null>(null)
+  const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
-    const stored = sessionStorage.getItem('dermiq_result')
-    const img = sessionStorage.getItem('dermiq_image')
-    if (!stored) { router.push('/'); return }
-    setResult(JSON.parse(stored))
-    setImage(img)
-    setMounted(true)
-  }, [router])
+    setIsMobile(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent))
+  }, [])
 
-  if (!mounted || !result) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="w-8 h-8 rounded-full border-t-2 border-yellow-400 animate-spin" />
-    </div>
-  )
+  const compressImage = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const img = document.createElement('img')
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const MAX = 1024
+        let { width, height } = img
+        if (width > height) {
+          if (width > MAX) { height = (height * MAX) / width; width = MAX }
+        } else {
+          if (height > MAX) { width = (width * MAX) / height; height = MAX }
+        }
+        canvas.width = width
+        canvas.height = height
+        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
+        URL.revokeObjectURL(url)
+        resolve(canvas.toDataURL('image/jpeg', 0.85))
+      }
+      img.onerror = reject
+      img.src = url
+    })
 
-  const top = result.topPrediction
-  const risk = top.risk as RiskLevel
-  const riskConf = RISK_CONFIG[risk]
-  const riskIcon = { low: CheckCircle, moderate: Clock, high: AlertTriangle, critical: AlertTriangle }[risk]
-  const RiskIcon = riskIcon
+  const handleFile = useCallback(async (file: File) => {
+    if (!file.type.startsWith('image/') && !file.name.toLowerCase().endsWith('.heic')) {
+      setError({ message: 'Please upload an image file (JPG, PNG, HEIC).' })
+      return
+    }
+    setError(null)
+    const b64 = await compressImage(file)
+    setPreview(b64)
+  }, [])
 
-  const handleShare = async () => {
-    if (navigator.share) {
-      await navigator.share({
-        title: 'DermIQ Analysis Result',
-        text: `Skin lesion classified as: ${top.name} (${top.confidence}% confidence). Risk: ${riskConf.label}.`,
+  const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true) }
+  const onDragLeave = () => setIsDragging(false)
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault(); setIsDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file) handleFile(file)
+  }
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) handleFile(file)
+  }
+
+  const handleAnalyse = async () => {
+    if (!preview) return
+    setIsAnalyzing(true)
+    setError(null)
+
+    try {
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: preview }),
       })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setError({ message: data.error || 'Analysis failed. Please try again.', code: data.code })
+        setIsAnalyzing(false)
+        return
+      }
+
+      sessionStorage.setItem('dermiq_result', JSON.stringify(data))
+      sessionStorage.setItem('dermiq_image', preview)
+      router.push('/results')
+    } catch {
+      setError({ message: 'Network error. Please check your connection and try again.' })
+      setIsAnalyzing(false)
     }
   }
 
-  const displayImage = showGradcam && result.gradcam ? result.gradcam : image
-
   return (
     <main className="min-h-screen flex flex-col">
-      <header className="flex items-center justify-between px-5 py-4 border-b border-white/5 sticky top-0 z-10"
-        style={{ background: 'rgba(8,9,26,0.92)', backdropFilter: 'blur(16px)' }}>
-        <button onClick={() => router.push('/')} className="flex items-center gap-2 text-white/50 text-sm hover:text-white/80 transition-colors">
-          <ArrowLeft className="w-4 h-4" />
-          New scan
-        </button>
-        <span className="font-display text-sm text-white/60">Analysis Results</span>
-        <button onClick={handleShare} className="text-white/40 hover:text-white/70 transition-colors">
-          <Share2 className="w-4 h-4" />
-        </button>
+      <header className="flex items-center justify-between px-6 py-5 border-b border-white/5">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-yellow-400/80 to-yellow-600/80 flex items-center justify-center">
+            <Scan className="w-4 h-4 text-black" />
+          </div>
+          <span className="font-display text-lg text-white/90 tracking-wide">DermIQ</span>
+        </div>
+        <span className="text-xs text-white/30 font-mono-custom tracking-widest uppercase">Beta</span>
       </header>
 
-      <div className="max-w-2xl mx-auto w-full px-4 py-6 space-y-5">
+      <section className="px-6 pt-12 pb-8 max-w-2xl mx-auto w-full text-center">
+        <p className="text-xs tracking-[0.25em] uppercase text-yellow-400/60 font-mono-custom mb-4">
+          AI-Powered Dermatology Screening
+        </p>
+        <h1 className="font-display text-4xl sm:text-5xl leading-tight text-white/95 mb-5">
+          Know your skin.<br />
+          <span className="gold-text italic">Before it speaks.</span>
+        </h1>
+        <p className="text-white/45 text-sm sm:text-base leading-relaxed max-w-md mx-auto">
+          Upload a close-up photo of any skin lesion. Our model — trained on 10,000+ clinical images — analyses it across 7 diagnostic categories in seconds.
+        </p>
+      </section>
 
-        {/* ── IMAGE + TOP RESULT ── */}
-        <div className="glass rounded-2xl overflow-hidden">
-          <div className="sm:flex">
-            {/* Image with Grad-CAM toggle */}
-            {image && (
-              <div className="sm:w-48 sm:flex-shrink-0 relative">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={displayImage || image}
-                  alt={showGradcam ? "AI attention heatmap" : "Analysed lesion"}
-                  className="w-full result-image sm:h-full"
-                />
-                {/* Grad-CAM toggle button */}
-                {result.gradcam && (
-                  <button
-                    onClick={() => setShowGradcam(!showGradcam)}
-                    className={`absolute bottom-2 right-2 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                      showGradcam
-                        ? 'bg-yellow-400 text-black'
-                        : 'bg-black/60 text-white/70 border border-white/20 hover:bg-black/80'
-                    }`}
-                  >
-                    <Eye className="w-3 h-3" />
-                    {showGradcam ? 'Original' : 'AI View'}
-                  </button>
-                )}
-              </div>
+      <section className="flex-1 px-4 pb-8 max-w-xl mx-auto w-full">
+        {!preview ? (
+          <div
+            className={`upload-zone rounded-2xl p-8 text-center cursor-pointer transition-all ${isDragging ? 'drag-over' : ''}`}
+            onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
+            onClick={() => fileInputRef.current?.click()}
+            style={{ minHeight: '260px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}
+          >
+            <div className="w-16 h-16 rounded-full bg-yellow-400/8 border border-yellow-400/20 flex items-center justify-center mx-auto">
+              <Upload className="w-7 h-7 text-yellow-400/70" />
+            </div>
+            <div>
+              <p className="text-white/70 text-sm font-medium mb-1">
+                {isDragging ? 'Drop to analyse' : 'Drop image here or click to browse'}
+              </p>
+              <p className="text-white/25 text-xs">Close-up of skin lesion · JPG, PNG, HEIC</p>
+            </div>
+            {isMobile && (
+              <button
+                onClick={(e) => { e.stopPropagation(); cameraInputRef.current?.click() }}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-full border border-yellow-400/30 text-yellow-400/80 text-sm hover:bg-yellow-400/8 transition-all"
+              >
+                <Camera className="w-4 h-4" />
+                Take Photo
+              </button>
             )}
-
-            {/* Top result */}
-            <div className="p-5 flex flex-col justify-center gap-3">
-              <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium w-fit ${riskConf.bg} ${riskConf.text} border ${riskConf.border}`}>
-                <RiskIcon className="w-3.5 h-3.5" />
-                {riskConf.label}
-              </div>
-              <div>
-                <div className="flex items-baseline gap-2 mb-1">
-                  <h2 className="font-display text-2xl text-white/95">{top.name}</h2>
-                  <span className="font-mono-custom text-lg gold-text font-medium">{top.confidence}%</span>
-                </div>
-                <p className="text-white/50 text-sm leading-relaxed">{top.layman}</p>
-              </div>
-            </div>
           </div>
-        </div>
-
-        {/* ── GRAD-CAM EXPLANATION ── */}
-        {result.gradcam && (
-          <div className="glass-2 rounded-2xl p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <Eye className="w-4 h-4 text-yellow-400/70" />
-              <span className="text-xs font-mono-custom uppercase tracking-widest text-yellow-400/70">AI Attention Map</span>
+        ) : (
+          <div className="glass rounded-2xl overflow-hidden">
+            <div className="relative">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={preview} alt="Selected lesion" className="w-full result-image" />
+              <button
+                onClick={() => { setPreview(null); setError(null) }}
+                className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/60 border border-white/10 flex items-center justify-center hover:bg-black/80 transition-all"
+              >
+                <X className="w-4 h-4 text-white/70" />
+              </button>
+              {isAnalyzing && (
+                <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center gap-3">
+                  <div className="relative w-12 h-12">
+                    <div className="absolute inset-0 rounded-full border-2 border-yellow-400/30"></div>
+                    <div className="absolute inset-0 rounded-full border-t-2 border-yellow-400 animate-spin"></div>
+                  </div>
+                  <p className="text-white/70 text-sm font-mono-custom">Analysing...</p>
+                </div>
+              )}
             </div>
-            <p className="text-white/55 text-sm leading-relaxed mb-4">
-              The heatmap shows <span className="text-red-400 font-medium">red/warm areas</span> where the model focused most to reach its diagnosis, and <span className="text-blue-400 font-medium">blue/cool areas</span> it largely ignored. This makes the AI&apos;s reasoning transparent and auditable.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={image || ''} alt="Original" className="w-full aspect-square object-cover" />
-                <p className="text-center text-white/30 text-xs py-1.5">Original</p>
-              </div>
-              <div className="rounded-xl overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={result.gradcam} alt="AI attention heatmap" className="w-full aspect-square object-cover" />
-                <p className="text-center text-white/30 text-xs py-1.5">AI Focus</p>
-              </div>
+
+            <div className="p-5">
+              {error && (
+                <div className="mb-4 rounded-xl overflow-hidden border border-red-500/20 bg-red-500/8">
+                  <div className="px-4 py-3 flex items-start gap-3">
+                    <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+                    <div className="space-y-1">
+                      <p className="text-red-300 text-sm font-medium">
+                        {error.code ? ERROR_EMOJI[error.code] : '⚠️'} {error.message}
+                      </p>
+                      {error.code && ERROR_HINTS[error.code] && (
+                        <p className="text-white/40 text-xs">{ERROR_HINTS[error.code]}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={handleAnalyse}
+                disabled={isAnalyzing}
+                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-yellow-500 to-yellow-400 text-black font-medium text-sm tracking-wide hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isAnalyzing ? <>Analysing image...</> : (
+                  <><Scan className="w-4 h-4" />Analyse Lesion<ChevronRight className="w-4 h-4" /></>
+                )}
+              </button>
+              <p className="text-center text-white/25 text-xs mt-3">
+                Results in ~3 seconds · Not a medical diagnosis
+              </p>
             </div>
           </div>
         )}
 
-        {/* ── CLINICAL DESCRIPTION ── */}
-        <div className="glass-2 rounded-2xl p-5 space-y-2">
-          <div className="flex items-center gap-2 text-yellow-400/70 text-xs font-mono-custom uppercase tracking-widest mb-3">
-            <Info className="w-3.5 h-3.5" />
-            Clinical Context
-          </div>
-          <p className="text-white/60 text-sm leading-relaxed">{top.description}</p>
-        </div>
+        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onFileChange} />
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onFileChange} />
+      </section>
 
-        {/* ── ACTION ADVICE ── */}
-        <div className={`rounded-2xl p-5 border ${riskConf.border} ${riskConf.bg}`}>
-          <p className={`text-xs font-mono-custom uppercase tracking-widest mb-3 ${riskConf.text}`}>What to do</p>
-          <p className="text-white/80 text-sm leading-relaxed mb-3">{top.action}</p>
-          <div className="flex items-center gap-2 text-white/40 text-xs">
-            <Clock className="w-3.5 h-3.5" />
-            {top.urgency}
-          </div>
+      <section className="border-t border-white/5 px-6 py-8">
+        <div className="max-w-2xl mx-auto grid grid-cols-3 gap-4 text-center">
+          {[
+            { icon: Shield, label: 'Clinical Dataset', sub: 'HAM10000 · 10,015 images' },
+            { icon: Zap, label: '7 Lesion Classes', sub: 'Including melanoma' },
+            { icon: BookOpen, label: 'Research-Grade', sub: 'AUC 0.9808' },
+          ].map(({ icon: Icon, label, sub }) => (
+            <div key={label} className="flex flex-col items-center gap-2">
+              <Icon className="w-4 h-4 text-yellow-400/50" />
+              <span className="text-white/60 text-xs font-medium">{label}</span>
+              <span className="text-white/25 text-[10px]">{sub}</span>
+            </div>
+          ))}
         </div>
+      </section>
 
-        {/* ── CONFIDENCE BREAKDOWN ── */}
-        <div className="glass-2 rounded-2xl p-5">
-          <p className="text-xs font-mono-custom uppercase tracking-widest text-white/30 mb-5">
-            All 7 classes · Confidence breakdown
-          </p>
-          <div className="space-y-3.5">
-            {result.allPredictions.map((pred, i) => (
-              <div key={pred.lesionId}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className={`text-xs font-medium ${i === 0 ? 'text-white/90' : 'text-white/45'}`}>{pred.name}</span>
-                  <span className={`text-xs font-mono-custom ${i === 0 ? 'gold-text' : 'text-white/35'}`}>{pred.confidence}%</span>
-                </div>
-                <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full confidence-fill ${i === 0 ? 'bg-gradient-to-r from-yellow-500 to-yellow-300' : 'bg-white/15'}`}
-                    style={{ width: `${pred.confidence}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <p className="text-center text-white/20 text-xs font-mono-custom">
-          Analysed {new Date(result.analyzedAt).toLocaleString('en-GB')}
+      <footer className="px-6 pb-8 text-center">
+        <p className="text-white/20 text-[11px] max-w-sm mx-auto leading-relaxed">
+          DermIQ is a screening aid only. It does not provide medical diagnosis or replace professional clinical assessment.
         </p>
-
-        <div className="rounded-xl border border-white/5 p-4">
-          <p className="text-white/25 text-xs leading-relaxed text-center">{result.disclaimer}</p>
-        </div>
-
-        <button
-          onClick={() => { sessionStorage.clear(); router.push('/') }}
-          className="w-full py-3.5 rounded-xl border border-yellow-400/25 text-yellow-400/70 text-sm hover:bg-yellow-400/8 transition-all flex items-center justify-center gap-2"
-        >
-          <RotateCcw className="w-4 h-4" />
-          Analyse another lesion
-        </button>
-
-        <div className="pb-8" />
-      </div>
+      </footer>
     </main>
   )
 }

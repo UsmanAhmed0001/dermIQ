@@ -2,7 +2,20 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Upload, Scan, Shield, Zap, BookOpen, ChevronRight, X } from 'lucide-react'
+import { Camera, Upload, Scan, Shield, Zap, BookOpen, ChevronRight, X, AlertCircle } from 'lucide-react'
+import { getLesionByLabel } from '@/lib/lesionData'
+
+const RAILWAY_URL = 'https://web-production-26f73.up.railway.app/classify'
+
+const ERROR_HINTS: Record<string, string> = {
+  NO_SKIN:        'Tip: Hold the camera 5–10cm from your skin. Make sure the lesion fills most of the frame.',
+  QUALITY_FAIL:   'Tip: Use natural daylight and hold your hand steady.',
+  LOW_CONFIDENCE: 'Tip: Get closer to the lesion and make sure it is in sharp focus.',
+}
+
+const ERROR_EMOJI: Record<string, string> = {
+  NO_SKIN: '🚫', QUALITY_FAIL: '📷', LOW_CONFIDENCE: '🔍',
+}
 
 export default function HomePage() {
   const router = useRouter()
@@ -11,7 +24,7 @@ export default function HomePage() {
   const [preview, setPreview] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<{ message: string; code?: string } | null>(null)
   const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
@@ -41,8 +54,8 @@ export default function HomePage() {
     })
 
   const handleFile = useCallback(async (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      setError('Please upload an image file (JPG, PNG, HEIC).'); return
+    if (!file.type.startsWith('image/') && !file.name.toLowerCase().endsWith('.heic')) {
+      setError({ message: 'Please upload an image file (JPG, PNG, HEIC).' }); return
     }
     setError(null)
     const b64 = await compressImage(file)
@@ -53,7 +66,8 @@ export default function HomePage() {
   const onDragLeave = () => setIsDragging(false)
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault(); setIsDragging(false)
-    const file = e.dataTransfer.files?.[0]; if (file) handleFile(file)
+    const file = e.dataTransfer.files?.[0]
+    if (file) handleFile(file)
   }
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (file) handleFile(file)
@@ -63,21 +77,50 @@ export default function HomePage() {
     if (!preview) return
     setIsAnalyzing(true); setError(null)
     try {
-      const res = await fetch('/api/analyze', {
+      const res = await fetch(RAILWAY_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ image: preview }),
       })
       const data = await res.json()
       if (!res.ok) {
-        setError(data.error || 'Analysis failed. Please try again.')
+        setError({ message: data.error || 'Analysis failed.', code: data.code })
         setIsAnalyzing(false); return
       }
-      sessionStorage.setItem('dermiq_result', JSON.stringify(data))
+      const sorted = [...data.predictions].sort((a: {label: string; score: number}, b: {label: string; score: number}) => b.score - a.score)
+      const enriched = sorted.map((pred: {label: string; score: number}) => {
+        const l = getLesionByLabel(pred.label)
+        if (l) return {
+          lesionId: l.id, name: l.name, layman: l.layman, description: l.description,
+          risk: l.risk, action: l.action, urgency: l.urgency,
+          confidence: Math.round(pred.score * 100), emoji: l.emoji, color: l.color,
+        }
+        return {
+          lesionId: pred.label, name: pred.label, layman: 'Unknown lesion type.',
+          description: '', risk: 'moderate', action: 'Consult a dermatologist.',
+          urgency: 'Book an appointment.', confidence: Math.round(pred.score * 100),
+          emoji: '❓', color: 'text-gray-400',
+        }
+      })
+      const top = enriched[0]
+      const result = {
+        topPrediction: {
+          lesionId: top.lesionId, name: top.name, layman: top.layman,
+          description: top.description, risk: top.risk, action: top.action,
+          urgency: top.urgency, confidence: top.confidence, emoji: top.emoji,
+        },
+        allPredictions: enriched.map((e: {lesionId: string; name: string; confidence: number; risk: string; color: string}) => ({
+          lesionId: e.lesionId, name: e.name, confidence: e.confidence, risk: e.risk, color: e.color,
+        })),
+        gradcam: null,
+        disclaimer: 'DermIQ is an AI-assisted screening tool and does NOT replace professional medical advice.',
+        analyzedAt: new Date().toISOString(),
+      }
+      sessionStorage.setItem('dermiq_result', JSON.stringify(result))
       sessionStorage.setItem('dermiq_image', preview)
       router.push('/results')
     } catch {
-      setError('Network error. Please check your connection.')
+      setError({ message: 'Network error. Please check your connection.' })
       setIsAnalyzing(false)
     }
   }
@@ -149,8 +192,14 @@ export default function HomePage() {
             </div>
             <div className="p-5">
               {error && (
-                <div className="mb-4 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                  {error}
+                <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-3 flex items-start gap-3">
+                  <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+                  <div className="space-y-1">
+                    <p className="text-red-300 text-sm font-medium">{error.code ? ERROR_EMOJI[error.code] : '⚠️'} {error.message}</p>
+                    {error.code && ERROR_HINTS[error.code] && (
+                      <p className="text-white/40 text-xs">{ERROR_HINTS[error.code]}</p>
+                    )}
+                  </div>
                 </div>
               )}
               <button onClick={handleAnalyse} disabled={isAnalyzing}

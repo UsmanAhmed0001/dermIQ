@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     if (!response.ok) {
       const err = await response.text()
       console.error('Railway error:', response.status, err)
-      return NextResponse.json({ error: `API error: ${response.status}` }, { status: 500 })
+      return NextResponse.json({ error: `Analysis failed. Please try again.` }, { status: 500 })
     }
 
     const data = await response.json()

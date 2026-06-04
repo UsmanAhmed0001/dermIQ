@@ -6,7 +6,7 @@ import { Camera, Upload, Scan, Shield, Zap, BookOpen, ChevronRight, X, AlertCirc
 import { getLesionByLabel } from '@/lib/lesionData'
 import { AnalysisResult } from '@/lib/types'
 
-const RAILWAY_URL = 'https://web-production-26f73.up.railway.app/classify'
+const RAILWAY_URL = 'https://uzzyy-dermiq-ml-api.hf.space/classify'
 
 const ERROR_HINTS: Record<string, string> = {
   NO_SKIN:   'Hold the camera 5–10cm from your skin. Make sure skin fills most of the frame.',
